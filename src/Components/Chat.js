@@ -1,88 +1,93 @@
+// Chat.js
 import React, { useState, useEffect } from "react";
 import { useParams } from "react-router-dom";
 import "../Stylesheets/Chat.css";
-import db from "../firebase";
-import firebase from "firebase";
+import db, { auth } from "../firebase";
+import firebase from "firebase/app";
 import Message from './Message';
 import EmojiPicker from 'emoji-picker-react';
 
 function Chat({ noneSelected }) {
-  const [input, setInput] = useState("");         // input: will store the message inputed.
-  const { roomId } = useParams();                 // useParams: gets the roomId parameter from the url.
-  const [roomName, setRoomName] = useState("");   // roomName: stores the name of the room
-  const [messages, setMessages] = useState([]);   // messages: used to store all the messages in the room for display.
-  const user = firebase.auth().currentUser;  
-  
+  const [input, setInput] = useState("");
+  const { roomId } = useParams();
+  const [roomName, setRoomName] = useState("");
+  const [messages, setMessages] = useState([]);
+  const [user, setUser] = useState(null);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
 
-const onEmojiClick = (emojiData) => {
-  setInput((prev) => prev + emojiData.emoji); // append emoji to input
-};// current user object from firebase auth.
+  // Auth state listener
+  useEffect(() => {
+    const unsubscribe = auth.onAuthStateChanged(authUser => {
+      if (authUser) setUser(authUser);
+    });
+    return () => unsubscribe();
+  }, []);
 
-  useEffect(() => {                               // this will run when the user opens a chat room 
+  // Load room name and messages
+  useEffect(() => {
     if (roomId) {
-      db.collection("rooms")                      // query 1: to get the name of the room.
-        .doc(roomId)                              // for a given roomId  (SQL equivalent: "SELECT name FROM rooms WHERE roomId='roomId' ")
-        .onSnapshot((snapshot) => {
-          setRoomName(snapshot.data().name);      // the obtained name is stored into roomName variable.
-        });
+      db.collection("rooms").doc(roomId).onSnapshot(snapshot => {
+        setRoomName(snapshot.data()?.name);
+      });
 
-      db.collection("rooms")                      // query 2: to get all the messages from the messages
-        .doc(roomId)                              // for a given roomId  (SQL equivalent: "SELECT * FROM messages WHERE roomId='roomId' ORDER BY timestamp ASC ")
-        .collection("messages")
+      db.collection("rooms").doc(roomId).collection("messages")
         .orderBy("timestamp", "asc")
-        .onSnapshot((snapshot) => {
-          setMessages(snapshot.docs.map((doc) => ({ ...doc.data(), id: doc.id })));   // the messages are stored into messages variable.
+        .onSnapshot(snapshot => {
+          const msgs = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
+          setMessages(msgs);
         });
     }
-
   }, [roomId]);
 
-  
-  function scrollIntoView(selector) { // this function uses the DOM method scrollIntoView to bring an html element into view.
-    document.querySelector(selector).scrollIntoView({ behavior: 'smooth' });
+  // Scroll to bottom
+  function scrollIntoView(selector) {
+    const el = document.querySelector(selector);
+    if (el) el.scrollIntoView({ behavior: 'smooth' });
   }
 
-  useEffect(() => {                                   // this will run when the user opens a chat room 
-    if(!noneSelected) scrollIntoView('.chatBottom');  // and scroll to the last message
-  });
+  useEffect(() => {
+    if (!noneSelected) scrollIntoView('.chatBottom');
+  }, [messages, noneSelected]);
 
-  function sendMessage(event) {                                                // Function to send message.
-    event.preventDefault();                                                    // preventDefault method is to avoid page reload.
+  // Send message
+  function sendMessage(event) {
+    event.preventDefault();
+    if (!input.trim()) return;
+    if (!user) return alert("User not authenticated!");
 
-    if (input !== "") {                                                        // If input is not null or ''
-      db.collection("rooms").doc(roomId).collection("messages")   
-        .add({                                                                 // then add message to database.
-          message: input,
-          name: user.displayName,
-          timestamp: firebase.firestore.FieldValue.serverTimestamp(),
-        })
-        .then(() => {                                                          // If message added successfully 
-          scrollIntoView('.chatBottom');                                       // Scroll to the last message
-        });
-    }
+    db.collection("rooms").doc(roomId).collection("messages").add({
+      message: input,
+      name: user.displayName,
+      timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+    }).then(() => {
+      scrollIntoView('.chatBottom');
+    });
 
-    setInput(""); // reset the message input field.
+    setInput("");
+  }
+
+  // Emoji click
+  const onEmojiClick = (emojiData) => {
+    setInput((prev) => prev + emojiData.emoji);
   };
 
-  const randomNum = () => Math.floor(Math.random() * 255); // this function will return a random for 0 - 255
-  
+  const randomNum = () => Math.floor(Math.random() * 255);
 
-  function deleteRoom() {                                                       // Function to delete room.
-    if (window.confirm("Are you sure that you want to delete this room?")) {    // get confirmation.
-      db.collection("rooms").doc(roomId).delete()                               // delete the Room
-        .then(() => {                                                           // if (delete successful)
-          window.location.href = "/";                                           // go to home location [coz the group won't exist and it will throw an error]
-        })
-        .catch(() => {                                                          // else display error in console.
-          console.error('Unable to delete room.');
-        })
+  // Delete room
+  function deleteRoom() {
+    if (window.confirm("Are you sure you want to delete this room?")) {
+      db.collection("rooms").doc(roomId).delete().then(() => {
+        window.location.href = "/";
+      }).catch(() => {
+        console.error('Unable to delete room.');
+      });
     }
-  };
+  }
 
-  function goBack(){                                                            // the is a goback button, only displayed on smaller devices.
-    scrollIntoView('.sidebar__header');                                         // it brings the header into view. 
-  }  
+  // Go back (for mobile)
+  function goBack() {
+    scrollIntoView('.sidebar__header');
+  }
 
   return !noneSelected ? (
     <div className="chat">
@@ -90,10 +95,8 @@ const onEmojiClick = (emojiData) => {
         <div className="IconButton chat__backBtn" onClick={goBack}>
           <i className="fas fa-arrow-left"></i>
         </div>
-        <div
-          className="sidebarRoom__avatar"
-          style={{ backgroundColor: `rgb(${randomNum()},${randomNum()},${randomNum()})` }}
-        >
+        <div className="sidebarRoom__avatar"
+          style={{ backgroundColor: `rgb(${randomNum()},${randomNum()},${randomNum()})` }}>
           {roomName[0]}
         </div>
         <h3 className="chat__headerName">{roomName}</h3>
@@ -103,48 +106,47 @@ const onEmojiClick = (emojiData) => {
       </div>
 
       <div className="chat__body">
-        {messages.map((message) => ( 
-          <Message 
+        {messages.map(message => (
+          <Message
+            key={message.id}
             roomId={roomId}
             messageId={message.id}
             name={message.name}
             message={message.message}
             timestamp={message.timestamp}
-            person={(message.name === user.displayName) && "sender"}
+            person={user && message.name === user.displayName ? "sender" : ""}
           />
         ))}
-
-
         <span className="chatBottom"></span>
       </div>
-        
+
       <div className="chat__footer">
-  <form>
-    <button
-      type="button"
-      onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-      className="emoji-toggle-button"
-    >
-      😊
-    </button>
+        <form>
+          <button
+            type="button"
+            onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+            className="emoji-toggle-button"
+          >
+            😊
+          </button>
 
-    {showEmojiPicker && (
-      <div className="emoji-picker">
-        <EmojiPicker onEmojiClick={onEmojiClick} />
+          {showEmojiPicker && (
+            <div className="emoji-picker">
+              <EmojiPicker onEmojiClick={onEmojiClick} />
+            </div>
+          )}
+
+          <input
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            type="text"
+            placeholder="Type a message"
+          />
+          <button onClick={sendMessage} type="submit">
+            <i className="fas fa-paper-plane"></i>
+          </button>
+        </form>
       </div>
-    )}
-
-    <input
-      value={input}
-      onChange={(e) => setInput(e.target.value)}
-      type="text"
-      placeholder="Type a message"
-    />
-    <button onClick={sendMessage} type="submit">
-      <i className="fas fa-paper-plane"></i>
-    </button>
-  </form>
-</div>
     </div>
   ) : (
     <div className="chat">
