@@ -2,6 +2,7 @@
   "name": "bca-mini-project",
   "version": "0.1.0",
   "private": true,
+  "homepage": "https://aysha-humairaa.github.io/Final-project",
   "dependencies": {
     "@testing-library/jest-dom": "^4.2.4",
     "@testing-library/react": "^9.5.0",
